@@ -159,9 +159,10 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 	}
 
 	private void createInitializeBuilderMethod(final BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE> builderData) {
+            System.out.println("HEY");
 		final TYPE_TYPE type = builderData.getType();
-		final TypeRef fieldDefType = builderData.getRequiredFields().isEmpty() ? Type(OPTIONAL_DEF) : builderData.getRequiredFieldDefTypes().get(0);
-		type.editor().injectMethod(MethodDecl(fieldDefType, decapitalize(type.name())).makeStatic().withAccessLevel(builderData.getLevel()).withTypeParameters(type.typeParameters()) //
+		final TypeRef fieldDefType = Type(OPTIONAL_DEF);
+		type.editor().injectMethod(MethodDecl(fieldDefType, builderData.getBuilderName()).makeStatic().withArguments(builderData.getRequiredArguments()).withAccessLevel(builderData.getLevel()).withTypeParameters(type.typeParameters()) //
 				.withStatement(Return(New(Type(BUILDER).withTypeArguments(type.typeArguments())))));
 	}
 
@@ -374,7 +375,8 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 				.withFields(builderFields) //
 				.withMethods(builderFieldDefaultMethods) //
 				.withMethods(builderMethods) //
-				.withMethod(ConstructorDecl(BUILDER).makePrivate().withImplicitSuper()));
+				.withMethod(ConstructorDecl(BUILDER).makePrivate().withImplicitSuper())
+                                .withMethod(ConstructorDecl(BUILDER).withArguments(builderData.getRequiredArguments())));
 	}
 
 	private static <FIELD_TYPE extends IField<?, ?, ?, ?>> boolean isInitializedMapOrCollection(final FIELD_TYPE field) {
@@ -399,6 +401,7 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 		private final List<String> requiredFieldDefTypeNames = new ArrayList<String>();;
 		private final TYPE_TYPE type;
 		private final String methodPrefix;
+		private final String builderName;
 		private final List<String> callMethods;
 		private final boolean generateConvenientMethodsEnabled;
 		private final boolean resetAllowed;
@@ -413,6 +416,7 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 			callMethods = Arrays.asList(builder.callMethods());
 			level = builder.value();
 			resetAllowed = builder.allowReset();
+                        builderName = !builder.name().isEmpty() ? builder.name() : decapitalize(type.name());
 		}
 
 		public BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE> collect() {
@@ -433,7 +437,15 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 			}
 			return this;
 		}
-
+                
+                public List<Argument> getRequiredArguments() {
+                    List<Argument> arguments = new ArrayList<Argument>();
+                    for (FIELD_TYPE typeRef : requiredFields) {
+                        arguments.add(new Argument(typeRef.type(), typeRef.filteredName()));
+                    }
+                    
+                    return arguments;
+                }
 		public List<FIELD_TYPE> getAllFields() {
 			List<FIELD_TYPE> allFields = new ArrayList<FIELD_TYPE>(getRequiredFields());
 			allFields.addAll(getOptionalFields());
