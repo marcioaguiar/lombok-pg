@@ -124,6 +124,7 @@ public @interface Builder {
 	lombok.AccessLevel value() default lombok.AccessLevel.PUBLIC;
 
         String name() default "";
+        String postBuild() default "";
         
 	/**
 	 * If specified all builder methods will be prefixed with this string.

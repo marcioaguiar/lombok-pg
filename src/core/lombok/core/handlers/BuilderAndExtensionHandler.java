@@ -40,14 +40,13 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 
 	public void handleBuilder(final TYPE_TYPE type, final Builder builder) {
 		final BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE> builderData = new BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE>(type, builder).collect();
-		final List<TypeRef> interfaceTypes = new ArrayList<TypeRef>(builderData.getRequiredFieldDefTypes());
+		final List<TypeRef> interfaceTypes = new ArrayList<TypeRef>();
 		interfaceTypes.add(Type(OPTIONAL_DEF));
 		for (TypeRef interfaceType : interfaceTypes) interfaceType.withTypeArguments(type.typeArguments());
 		final List<AbstractMethodDecl<?>> builderMethods = new ArrayList<AbstractMethodDecl<?>>();
 
 		createConstructor(builderData);
 		createInitializeBuilderMethod(builderData);
-		createRequiredFieldInterfaces(builderData, builderMethods);
 		createOptionalFieldInterface(builderData, builderMethods);
 		createBuilder(builderData, interfaceTypes, builderMethods);
 	}
@@ -140,6 +139,11 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 				constructorDecl.withStatement(Assign(Field(field.name()), Field(Name("builder"), field.filteredName())));
 			}
 		}
+                
+                if (builderData.getPostBuild() != null) {
+                    constructorDecl.withStatement(Call(This(), builderData.getPostBuild()));
+                }
+                
 		type.editor().injectConstructor(constructorDecl);
 	}
 
@@ -159,41 +163,15 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 	}
 
 	private void createInitializeBuilderMethod(final BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE> builderData) {
-            System.out.println("HEY");
 		final TYPE_TYPE type = builderData.getType();
 		final TypeRef fieldDefType = Type(OPTIONAL_DEF);
+                New builderNew = New(Type(BUILDER).withTypeArguments(type.typeArguments()));
+                
+                for (Argument arg : builderData.getRequiredArguments()) {
+                    builderNew.withArgument(Name(arg.getName()));
+                }
 		type.editor().injectMethod(MethodDecl(fieldDefType, builderData.getBuilderName()).makeStatic().withArguments(builderData.getRequiredArguments()).withAccessLevel(builderData.getLevel()).withTypeParameters(type.typeParameters()) //
-				.withStatement(Return(New(Type(BUILDER).withTypeArguments(type.typeArguments())))));
-	}
-
-	private void createRequiredFieldInterfaces(final BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE> builderData, final List<AbstractMethodDecl<?>> builderMethods) {
-		List<FIELD_TYPE> fields = builderData.getRequiredFields();
-		if (!fields.isEmpty()) {
-			TYPE_TYPE type = builderData.getType();
-			List<String> names = builderData.getRequiredFieldDefTypeNames();
-			FIELD_TYPE field = fields.get(0);
-			String name = names.get(0);
-			for (int i = 1, iend = fields.size(); i < iend; i++) {
-				List<AbstractMethodDecl<?>> interfaceMethods = new ArrayList<AbstractMethodDecl<?>>();
-				createFluentSetter(builderData, names.get(i), field, interfaceMethods, builderMethods);
-
-				if (builderData.isResetAllowed()) {
-					createResetMethod(builderData, interfaceMethods, new ArrayList<AbstractMethodDecl<?>>());
-				}
-
-				type.editor().injectType(InterfaceDecl(name).makePublic().makeStatic().withTypeParameters(type.typeParameters()).withMethods(interfaceMethods));
-				field = fields.get(i);
-				name = names.get(i);
-			}
-			List<AbstractMethodDecl<?>> interfaceMethods = new ArrayList<AbstractMethodDecl<?>>();
-			createFluentSetter(builderData, OPTIONAL_DEF, field, interfaceMethods, builderMethods);
-
-			if (builderData.isResetAllowed()) {
-				createResetMethod(builderData, interfaceMethods, new ArrayList<AbstractMethodDecl<?>>());
-			}
-
-			type.editor().injectType(InterfaceDecl(name).makePublic().makeStatic().withTypeParameters(type.typeParameters()).withMethods(interfaceMethods));
-		}
+				.withStatement(Return(builderNew)));
 	}
 
 	private void createOptionalFieldInterface(final BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE> builderData, final List<AbstractMethodDecl<?>> builderMethods) {
@@ -371,12 +349,23 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 			}
 			builderFields.add(builderField);
 		}
+                
+                ConstructorDecl constructor = 
+                        ConstructorDecl(BUILDER)
+                        .withArguments(builderData.getRequiredArguments());
+                
+                for (Argument arg : builderData.getRequiredArguments()) {
+                    constructor.withStatement(
+                            Assign(Field(arg.getName()), 
+                                   Name(arg.getName())));
+                }
+                
 		type.editor().injectType(ClassDecl(BUILDER).withTypeParameters(type.typeParameters()).makePrivate().makeStatic().implementing(interfaceTypes) //
 				.withFields(builderFields) //
 				.withMethods(builderFieldDefaultMethods) //
 				.withMethods(builderMethods) //
 				.withMethod(ConstructorDecl(BUILDER).makePrivate().withImplicitSuper())
-                                .withMethod(ConstructorDecl(BUILDER).withArguments(builderData.getRequiredArguments())));
+                                .withMethod(constructor));
 	}
 
 	private static <FIELD_TYPE extends IField<?, ?, ?, ?>> boolean isInitializedMapOrCollection(final FIELD_TYPE field) {
@@ -402,6 +391,7 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 		private final TYPE_TYPE type;
 		private final String methodPrefix;
 		private final String builderName;
+		private final String postBuild;
 		private final List<String> callMethods;
 		private final boolean generateConvenientMethodsEnabled;
 		private final boolean resetAllowed;
@@ -417,6 +407,7 @@ public class BuilderAndExtensionHandler<TYPE_TYPE extends IType<METHOD_TYPE, FIE
 			level = builder.value();
 			resetAllowed = builder.allowReset();
                         builderName = !builder.name().isEmpty() ? builder.name() : decapitalize(type.name());
+                        postBuild = !builder.postBuild().isEmpty() ? builder.postBuild(): null;
 		}
 
 		public BuilderData<TYPE_TYPE, METHOD_TYPE, FIELD_TYPE> collect() {
